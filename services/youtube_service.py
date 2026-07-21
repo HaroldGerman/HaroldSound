@@ -25,7 +25,7 @@ class YtDlpNullLogger:
 class YoutubeService:
     """
     Servicio centralizado e independiente para gestionar la interacción con YouTube mediante yt-dlp.
-    Soporta reintentos automáticos, fallbacks de clientes, manejo de cookies y procesamiento de audio con FFmpeg.
+    Soporta reintentos automáticos, fallbacks de clientes móviles puros, manejo de cookies y procesamiento de audio con FFmpeg.
     """
 
     def __init__(self, cookies_file: str = "cookies.txt", downloads_dir: str = "descargas"):
@@ -37,7 +37,7 @@ class YoutubeService:
 
     def _get_base_options(self, use_cookies: bool = True, client_strategy: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Construye la configuración centralizada y actualizada para yt-dlp.
+        Construye la configuración centralizada y optimizada para yt-dlp sin clientes web que activen DRM o Anti-Bot.
         """
         opts: Dict[str, Any] = {
             'format': 'bestaudio/best',
@@ -67,13 +67,13 @@ class YoutubeService:
 
     def search_songs(self, query: str, max_results: int = 16) -> List[Dict[str, Any]]:
         """
-        Busca canciones en YouTube de forma robusta con múltiples estrategias de reintento.
+        Busca canciones en YouTube de forma robusta con múltiples estrategias de reintento en clientes móviles.
         """
         strategies = [
-            {'use_cookies': False, 'client_strategy': ['android_vr', 'web']},
-            {'use_cookies': True, 'client_strategy': ['android_vr', 'web']},
-            {'use_cookies': False, 'client_strategy': ['mweb', 'android']},
-            {'use_cookies': False, 'client_strategy': None},
+            {'use_cookies': False, 'client_strategy': ['android', 'android_vr']},
+            {'use_cookies': True, 'client_strategy': ['android', 'android_vr']},
+            {'use_cookies': False, 'client_strategy': ['android_music', 'android']},
+            {'use_cookies': False, 'client_strategy': ['android_vr']},
         ]
 
         clean_query = query.strip()
@@ -118,7 +118,6 @@ class YoutubeService:
             url_video = video.get('url') or video.get('webpage_url') or ''
             video_id = video.get('id', '')
 
-            # Validar si es un video de YouTube válido y no un canal u otro tipo de elemento
             es_video = (ie_key == 'Youtube') or ('watch?v=' in url_video) or (len(video_id) == 11 and not video_id.startswith('UC'))
 
             if es_video:
@@ -153,13 +152,13 @@ class YoutubeService:
     def download_audio(self, url: str) -> Dict[str, Any]:
         """
         Descarga el audio de una URL de YouTube en formato MP3 (192kbps)
-        reutilizando la misma lógica centralizada y ejecutando reintentos con fallbacks.
+        usando clientes android puros para evitar bloqueos Anti-Bot/DRM.
         """
         strategies = [
-            {'use_cookies': False, 'client_strategy': ['android_vr', 'web']},
-            {'use_cookies': True, 'client_strategy': ['android_vr', 'web']},
-            {'use_cookies': False, 'client_strategy': ['mweb', 'android']},
-            {'use_cookies': False, 'client_strategy': None},
+            {'use_cookies': False, 'client_strategy': ['android', 'android_vr']},
+            {'use_cookies': True, 'client_strategy': ['android', 'android_vr']},
+            {'use_cookies': False, 'client_strategy': ['android_music', 'android']},
+            {'use_cookies': False, 'client_strategy': ['android_vr']},
         ]
 
         out_template = os.path.join(self.downloads_dir, "%(title)s.%(ext)s")
@@ -190,7 +189,6 @@ class YoutubeService:
                     if not info:
                         raise ValueError("No se obtuvieron metadatos del video")
 
-                    # Si es una lista de reproducción, extraer la primera entrada
                     if 'entries' in info and len(info['entries']) > 0:
                         info = info['entries'][0]
 
