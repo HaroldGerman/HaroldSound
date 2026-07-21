@@ -70,9 +70,9 @@ class YoutubeService:
         Busca canciones en YouTube de forma robusta con múltiples estrategias de reintento.
         """
         strategies = [
-            {'use_cookies': False, 'client_strategy': ['android_vr', 'web', 'tv']},
-            {'use_cookies': True, 'client_strategy': ['android_vr', 'web', 'tv']},
-            {'use_cookies': False, 'client_strategy': ['android', 'mweb']},
+            {'use_cookies': False, 'client_strategy': ['android_vr', 'web']},
+            {'use_cookies': True, 'client_strategy': ['android_vr', 'web']},
+            {'use_cookies': False, 'client_strategy': ['mweb', 'android']},
             {'use_cookies': False, 'client_strategy': None},
         ]
 
@@ -156,9 +156,9 @@ class YoutubeService:
         reutilizando la misma lógica centralizada y ejecutando reintentos con fallbacks.
         """
         strategies = [
-            {'use_cookies': False, 'client_strategy': ['android_vr', 'web', 'tv']},
-            {'use_cookies': True, 'client_strategy': ['android_vr', 'web', 'tv']},
-            {'use_cookies': False, 'client_strategy': ['android', 'mweb']},
+            {'use_cookies': False, 'client_strategy': ['android_vr', 'web']},
+            {'use_cookies': True, 'client_strategy': ['android_vr', 'web']},
+            {'use_cookies': False, 'client_strategy': ['mweb', 'android']},
             {'use_cookies': False, 'client_strategy': None},
         ]
 
