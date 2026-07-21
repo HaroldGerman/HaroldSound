@@ -295,11 +295,8 @@ async def admin_action(passkey: str = Form(...), deviceId: str = Form(...), acti
 
 @app.get("/descargar")
 async def descargar_cancion(url: str, request: Request):
-    # Intentar descargar de forma transparente y ultrarrápida sin cookies
-    # Si requiere autenticación especial de edad, se reintenta automáticamente usando cookies.txt
-    opciones_descarga = []
-    
-    opts_standard = {
+    # Cliente android_vr para omitir anti-bot de datacenter y descarga ultrarrápida
+    ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': f'{DESCARGAS_DIR}/%(title)s.%(ext)s',
         'postprocessors': [
@@ -313,75 +310,75 @@ async def descargar_cancion(url: str, request: Request):
                 'add_metadata': True,
             }
         ],
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android_vr', 'web', 'tv']
+            }
+        },
         'nocheckcertificate': True,
         'quiet': True,
         'noplaylist': True,
         'no_warnings': True,
     }
-    opciones_descarga.append(opts_standard)
 
-    if os.path.exists(COOKIES_FILE):
-        opts_cookies = opts_standard.copy()
-        opts_cookies['cookiefile'] = COOKIES_FILE
-        opciones_descarga.append(opts_cookies)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            if info and 'entries' in info and len(info['entries']) > 0:
+                info = info['entries'][0]
+            
+            nombre_archivo_original = ydl.prepare_filename(info)
+            nombre_final = nombre_archivo_original.rsplit('.', 1)[0] + '.mp3'
+            
+            solo_nombre = obtener_nombre_archivo_real(nombre_final)
+            titulo_cancion = info.get('title', solo_nombre.rsplit('.', 1)[0])
+            thumbnail = info.get('thumbnail') or f"https://img.youtube.com/vi/{info.get('id', '')}/hqdefault.jpg"
+            canal = info.get('uploader') or info.get('channel', 'Desconocido')
+            
+            duracion_sec = info.get('duration')
+            duracion_str = ""
+            if duracion_sec:
+                mins = int(duracion_sec) // 60
+                secs = int(duracion_sec) % 60
+                duracion_str = f"{mins}:{secs:02d}"
 
-    ultimo_error = None
-    for opts in opciones_descarga:
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if info and 'entries' in info and len(info['entries']) > 0:
-                    info = info['entries'][0]
+            meta_dict = cargar_metadatos_dict()
+            meta_dict[solo_nombre] = {
+                "titulo": titulo_cancion,
+                "thumbnail": thumbnail,
+                "canal": canal,
+                "duracion": duracion_str,
+                "id": info.get('id', '')
+            }
+            guardar_metadatos_dict(meta_dict)
+
+            base_url = str(request.base_url).rstrip('/')
+            url_encoded = quote(solo_nombre)
+            url_publica = f"{base_url}/descargas/{url_encoded}"
                 
-                nombre_archivo_original = ydl.prepare_filename(info)
-                nombre_final = nombre_archivo_original.rsplit('.', 1)[0] + '.mp3'
-                
-                solo_nombre = obtener_nombre_archivo_real(nombre_final)
-                titulo_cancion = info.get('title', solo_nombre.rsplit('.', 1)[0])
-                thumbnail = info.get('thumbnail') or f"https://img.youtube.com/vi/{info.get('id', '')}/hqdefault.jpg"
-                canal = info.get('uploader') or info.get('channel', 'Desconocido')
-                
-                duracion_sec = info.get('duration')
-                duracion_str = ""
-                if duracion_sec:
-                    mins = int(duracion_sec) // 60
-                    secs = int(duracion_sec) % 60
-                    duracion_str = f"{mins}:{secs:02d}"
-
-                meta_dict = cargar_metadatos_dict()
-                meta_dict[solo_nombre] = {
-                    "titulo": titulo_cancion,
-                    "thumbnail": thumbnail,
-                    "canal": canal,
-                    "duracion": duracion_str,
-                    "id": info.get('id', '')
-                }
-                guardar_metadatos_dict(meta_dict)
-
-                base_url = str(request.base_url).rstrip('/')
-                url_encoded = quote(solo_nombre)
-                url_publica = f"{base_url}/descargas/{url_encoded}"
-                    
-                return {
-                    "status": "success",
-                    "url": url_publica,
-                    "titulo": titulo_cancion,
-                    "archivo": solo_nombre,
-                    "thumbnail": thumbnail,
-                    "canal": canal,
-                    "duracion": duracion_str
-                }
-        except Exception as e:
-            ultimo_error = e
-            print(f"Intento de descarga con opciones falló: {e}")
-
-    return {"status": "error", "message": str(ultimo_error)}
+            return {
+                "status": "success",
+                "url": url_publica,
+                "titulo": titulo_cancion,
+                "archivo": solo_nombre,
+                "thumbnail": thumbnail,
+                "canal": canal,
+                "duracion": duracion_str
+            }
+    except Exception as e:
+        print(f"Error descargando {url}: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @app.get("/buscar")
 async def buscar_cancion(termino: str):
     ydl_opts = {
         'format': 'bestaudio/best',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android_vr', 'web', 'tv']
+            }
+        },
         'quiet': True,
         'extract_flat': True,
         'noplaylist': True,
