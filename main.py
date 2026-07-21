@@ -313,6 +313,7 @@ async def descargar_cancion(url: str, request: Request):
         'quiet': True,
         'noplaylist': True,
         'no_warnings': True,
+        'extractor_args': {'youtube': ['client=android,mweb']},
     }
 
     if os.path.exists(COOKIES_FILE):
@@ -375,6 +376,7 @@ async def buscar_cancion(termino: str):
         'extract_flat': True,
         'noplaylist': True,
         'no_warnings': True,
+        'extractor_args': {'youtube': ['client=android,mweb']},
     }
 
     if os.path.exists(COOKIES_FILE):
