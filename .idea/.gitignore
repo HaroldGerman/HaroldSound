@@ -1,0 +1,11 @@
+# Entornos y Caché
+venv/
+__pycache__/
+
+# Configuraciones locales del editor
+.idea/
+
+# Archivos multimedia y carpetas temporales
+*.mp3
+*.m4a
+descargas/
