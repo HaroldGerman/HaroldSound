@@ -296,7 +296,7 @@ async def admin_action(passkey: str = Form(...), deviceId: str = Form(...), acti
 @app.get("/descargar")
 async def descargar_cancion(url: str, request: Request):
     ydl_opts = {
-        'format': 'bestaudio/best/ba/b',
+        'format': 'bestaudio/best',
         'outtmpl': f'{DESCARGAS_DIR}/%(title)s.%(ext)s',
         'postprocessors': [
             {
@@ -309,11 +309,6 @@ async def descargar_cancion(url: str, request: Request):
                 'add_metadata': True,
             }
         ],
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web', 'tv'],
-            }
-        },
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         },
@@ -378,12 +373,7 @@ async def descargar_cancion(url: str, request: Request):
 @app.get("/buscar")
 async def buscar_cancion(termino: str):
     ydl_opts = {
-        'format': 'bestaudio/best/ba/b',
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web', 'tv'],
-            }
-        },
+        'format': 'bestaudio/best',
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         },
