@@ -11,7 +11,7 @@ logger = logging.getLogger("user_service")
 class UserService:
     """
     Servicio de gestión de usuarios, verificación por código PIN de 4 dígitos
-    y dispositivos registrados para HaroldSound.
+    vía WhatsApp/SMS y dispositivos registrados para HaroldSound.
     """
 
     def __init__(self, users_file: str = "users.json"):
@@ -44,7 +44,9 @@ class UserService:
 
     def enviar_codigo_verificacion(self, device_id: str, nombre: str, telefono: str) -> Dict[str, Any]:
         """
-        Genera un código PIN de 4 dígitos para verificar el dispositivo y teléfono.
+        Genera un código PIN de 4 dígitos.
+        SEGURIDAD: No se retorna el código en la respuesta pública HTTP para evitar que la app lo sepa de antemano.
+        El código únicamente es visible en el panel /admin para ser enviado por WhatsApp/SMS.
         """
         dev_id = device_id.strip()
         users = self.cargar_usuarios()
@@ -67,24 +69,24 @@ class UserService:
             "deviceId": dev_id,
             "nombre": nombre.strip(),
             "telefono": telefono.strip(),
-            "status": "code_sent",  # Esperando confirmación del PIN en la app
+            "status": "code_sent",  # Esperando que el usuario reciba el PIN por WhatsApp e ingrese en la app
             "verification_code": pin_code,
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         self.guardar_usuarios(users)
 
-        logger.info(f"🔑 Código PIN {pin_code} generado para {nombre} ({telefono}) [ID: {dev_id}]")
+        logger.info(f"🔑 Código PIN {pin_code} generado de forma segura para {nombre} ({telefono}) [ID: {dev_id}]")
 
+        # NO retornamos 'code' a la app por seguridad
         return {
             "status": "success",
             "user_status": "code_sent",
-            "code": pin_code,
-            "message": f"Código de verificación {pin_code} generado correctamente."
+            "message": "Solicitud recibida. Se enviará un código PIN de 4 dígitos a tu celular/WhatsApp."
         }
 
     def verificar_codigo(self, device_id: str, code: str) -> Dict[str, Any]:
         """
-        Valida el código PIN de 4 dígitos ingresado en la app.
+        Valida el código PIN de 4 dígitos ingresado por el usuario en la app.
         Si coincide, pasa al estado 'pending' para aprobación final en el panel /admin.
         """
         dev_id = device_id.strip()
@@ -102,17 +104,17 @@ class UserService:
             user["verified_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.guardar_usuarios(users)
 
-            logger.info(f"✅ Código PIN verificado para {user.get('nombre')}. Solicitud lista para el panel admin.")
+            logger.info(f"✅ Código PIN verificado para {user.get('nombre')}. Solicitud lista para aprobación final.")
 
             return {
                 "status": "success",
                 "user_status": "pending",
-                "message": "Código verificado correctamente. Tu solicitud ya aparece en el panel de administrador."
+                "message": "¡Número de celular verificado con éxito! Esperando aprobación del administrador."
             }
         else:
             return {
                 "status": "error",
-                "message": "Código de verificación incorrecto. Revisa el PIN e inténtalo nuevamente."
+                "message": "Código de verificación incorrecto. Revisa el PIN enviado a tu WhatsApp e inténtalo de nuevo."
             }
 
     def verificar_estado(self, device_id: str) -> Dict[str, Any]:

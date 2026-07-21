@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import socket
 from urllib.parse import quote
@@ -28,8 +29,8 @@ logger = logging.getLogger("main")
 # Inicialización de la aplicación FastAPI
 app = FastAPI(
     title="HaroldSound API & Admin Panel",
-    description="Backend optimizado y seguro para HaroldSound con autenticación PIN y JWT.",
-    version="2.2.1"
+    description="Backend optimizado y seguro para HaroldSound con autenticación PIN vía WhatsApp y JWT.",
+    version="2.3.0"
 )
 
 app.add_middleware(
@@ -68,9 +69,6 @@ class VerifyCodeRequest(BaseModel):
 
 
 def obtener_ip_local() -> str:
-    """
-    Obtiene la dirección IP local para facilitar pruebas en red local.
-    """
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -82,9 +80,6 @@ def obtener_ip_local() -> str:
 
 
 def obtener_base_url_publica(request: Request) -> str:
-    """
-    Construye la URL base pública garantizando el uso de HTTPS seguro para streaming.
-    """
     proto = request.headers.get("x-forwarded-proto", request.url.scheme)
     host = request.headers.get("x-forwarded-host", request.url.netloc)
 
@@ -92,6 +87,17 @@ def obtener_base_url_publica(request: Request) -> str:
         proto = "https"
 
     return f"{proto}://{host}"
+
+
+def limpiar_telefono_para_whatsapp(telefono: str) -> str:
+    """
+    Limpia el número de teléfono dejando únicamente los dígitos para la API de WhatsApp.
+    """
+    digits = re.sub(r"\D", "", telefono)
+    # Si no incluye código de país y es de 9 dígitos (ej. Perú), antepone 51
+    if len(digits) == 9 and not digits.startswith("51"):
+        digits = "51" + digits
+    return digits
 
 
 # --- ENDPOINTS DE REGISTRO Y VERIFICACIÓN PIN (APP ANDROID) ---
@@ -204,16 +210,27 @@ async def admin_panel(request: Request):
     users_html = ""
     for dev_id, user in users.items():
         status = user.get("status", "unregistered")
+        nombre = user.get("nombre", "Desconocido")
+        telefono = user.get("telefono", "-")
+        pin_code = user.get("verification_code", "-")
+        
+        # Generar enlace directo a WhatsApp Web / App para enviar el PIN con 1 clic
+        tel_clean = limpiar_telefono_para_whatsapp(telefono)
+        mensaje_wa = quote(f"Hola {nombre}, tu código de verificación para HaroldSound es: {pin_code}")
+        link_whatsapp = f"https://api.whatsapp.com/send?phone={tel_clean}&text={mensaje_wa}"
+        
+        btn_wa_html = f"""<a href="{link_whatsapp}" target="_blank" class="btn btn-wa" title="Enviar PIN por WhatsApp">💬 Enviar PIN ({pin_code})</a>"""
+        
         badge_class = "badge-pending"
         badge_text = "⏳ PENDIENTE"
-        pin_info = f"<br><small style='color:#38bdf8;'>PIN: <strong>{user.get('verification_code', '-')}</strong></small>"
+        pin_info = f"<br><small style='color:#38bdf8;'>PIN: <strong>{pin_code}</strong></small>"
         
         if status == "code_sent":
             badge_class = "badge-code"
-            badge_text = "🔑 PIN ENVIADO"
+            badge_text = "🔑 PIN GENERADO"
         elif status == "pending":
             badge_class = "badge-pending"
-            badge_text = "⏳ VERIFICADO (PENDIENTE ADMIN)"
+            badge_text = "⏳ PIN VERIFICADO (ESPERA ADMIN)"
         elif status == "approved":
             badge_class = "badge-approved"
             badge_text = "✅ APROBADO"
@@ -223,8 +240,11 @@ async def admin_panel(request: Request):
 
         users_html += f"""
         <tr>
-            <td><strong>{user.get('nombre', 'Desconocido')}</strong>{pin_info}</td>
-            <td>{user.get('telefono', '-')}</td>
+            <td><strong>{nombre}</strong>{pin_info}</td>
+            <td>
+                {telefono}<br>
+                {btn_wa_html}
+            </td>
             <td><small>{user.get('created_at', '-')}</small></td>
             <td><span class="badge {badge_class}">{badge_text}</span></td>
             <td>
@@ -259,18 +279,20 @@ async def admin_panel(request: Request):
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body {{ background:#121212; color:#f8fafc; font-family:'Outfit', sans-serif; margin:0; padding:2rem; }}
-        .header {{ max-width:1000px; margin:0 auto 2rem; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #282828; padding-bottom:1rem; }}
+        .header {{ max-width:1050px; margin:0 auto 2rem; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #282828; padding-bottom:1rem; }}
         h1 {{ color:#1DB954; margin:0; font-size:1.8rem; }}
-        .card {{ max-width:1000px; margin:0 auto; background:#181818; border-radius:12px; padding:1.5rem; border:1px solid #282828; }}
+        .card {{ max-width:1050px; margin:0 auto; background:#181818; border-radius:12px; padding:1.5rem; border:1px solid #282828; }}
         table {{ width:100%; border-collapse:collapse; margin-top:1rem; }}
-        th, td {{ padding:12px 16px; text-align:left; border-bottom:1px solid #282828; }}
-        th {{ color:#1DB954; font-size:0.9rem; text-transform:uppercase; }}
-        .badge {{ padding:4px 10px; border-radius:12px; font-size:0.8rem; font-weight:bold; }}
+        th, td {{ padding:12px 14px; text-align:left; border-bottom:1px solid #282828; vertical-align:middle; }}
+        th {{ color:#1DB954; font-size:0.85rem; text-transform:uppercase; }}
+        .badge {{ padding:4px 10px; border-radius:12px; font-size:0.75rem; font-weight:bold; }}
         .badge-code {{ background:#0284c7; color:#fff; }}
         .badge-pending {{ background:#F59E0B; color:#000; }}
         .badge-approved {{ background:#1DB954; color:#fff; }}
         .badge-blocked {{ background:#E11D48; color:#fff; }}
         .btn {{ padding:6px 12px; border:none; border-radius:6px; font-weight:bold; cursor:pointer; margin-right:4px; font-size:0.8rem; text-decoration:none; display:inline-block; }}
+        .btn-wa {{ background:#25D366; color:#fff; font-size:0.75rem; padding:4px 8px; border-radius:6px; margin-top:4px; text-decoration:none; display:inline-block; }}
+        .btn-wa:hover {{ background:#1da851; }}
         .btn-approve {{ background:#1DB954; color:#fff; }}
         .btn-block {{ background:#E11D48; color:#fff; }}
         .btn-delete {{ background:#4B5563; color:#fff; }}
@@ -286,13 +308,13 @@ async def admin_panel(request: Request):
         </div>
     </div>
     <div class="card">
-        <h2>Solicitudes de Dispositivos y Usuarios</h2>
-        <p style="color:#b3b3b3; font-size:0.9rem;">Solo las personas en estado <strong>✅ APROBADO</strong> podrán utilizar tu aplicación Android.</p>
+        <h2>Solicitudes de Dispositivos y Verificación WhatsApp</h2>
+        <p style="color:#b3b3b3; font-size:0.9rem;">Haz clic en <strong>💬 Enviar PIN por WhatsApp</strong> para mandar la clave al usuario. Solo las personas aprobadas tendrán acceso.</p>
         <table>
             <thead>
                 <tr>
                     <th>Nombre</th>
-                    <th>Teléfono</th>
+                    <th>Teléfono & WhatsApp</th>
                     <th>Fecha</th>
                     <th>Estado</th>
                     <th>Acciones</th>
@@ -391,7 +413,7 @@ async def reproductor_web():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HaroldSound - Pruebas de Verificación PIN</title>
+    <title>HaroldSound - Verificación por WhatsApp</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body { background:#121212; color:#fff; font-family:'Outfit', sans-serif; padding:2rem; max-width:650px; margin:0 auto; }
@@ -406,86 +428,11 @@ async def reproductor_web():
     </style>
 </head>
 <body>
-    <h1>🎵 HaroldSound Testing Sandbox</h1>
-    <p style="text-align:center; color:#b3b3b3;">Prueba el flujo de registro, verificación de PIN y aprobación en vivo:</p>
-
-    <!-- PASO 1 -->
-    <div class="card">
-        <h3>Paso 1: Solicitar Código PIN</h3>
-        <label>Nombre del Usuario:</label>
-        <input type="text" id="nombre" value="Carlos Prueba">
-        <label>Teléfono:</label>
-        <input type="text" id="telefono" value="987654321">
-        <label>ID del Dispositivo (deviceId):</label>
-        <input type="text" id="deviceId" value="dev_demo_99">
-        <button onclick="enviarCodigo()" class="btn">1. Enviar Registro y Generar PIN</button>
-        <div id="res1" class="res-box"></div>
+    <h1>🎵 HaroldSound Server Active</h1>
+    <p style="text-align:center; color:#b3b3b3;">Servidor con sistema de seguridad de verificación de número por WhatsApp activo.</p>
+    <div style="text-align:center;">
+        <a href="/admin" class="btn" style="display:inline-block; text-decoration:none; max-width:300px;">👑 Ir al Panel /admin</a>
     </div>
-
-    <!-- PASO 2 -->
-    <div class="card">
-        <h3>Paso 2: Confirmar Código PIN</h3>
-        <label>Código PIN de 4 dígitos:</label>
-        <input type="text" id="pinCode" placeholder="Ejemplo: 4829">
-        <button onclick="verificarCodigo()" class="btn btn-sec">2. Confirmar Código PIN</button>
-        <div id="res2" class="res-box"></div>
-    </div>
-
-    <!-- PASO 3 -->
-    <div class="card">
-        <h3>Paso 3: Aprobar desde el Panel Admin</h3>
-        <p>Una vez verificado el PIN, entra al Panel de Control para hacer clic en <strong>✅ APROBAR</strong>:</p>
-        <a href="/admin" target="_blank" class="btn" style="display:block; text-align:center; text-decoration:none;">👑 Abrir Panel Administrador /admin</a>
-        <button onclick="consultarEstado()" class="btn btn-sec" style="margin-top:1rem;">3. Consultar Estado Actual (check-status)</button>
-        <div id="res3" class="res-box"></div>
-    </div>
-
-    <script>
-        async function enviarCodigo() {
-            const data = {
-                deviceId: document.getElementById('deviceId').value,
-                nombre: document.getElementById('nombre').value,
-                telefono: document.getElementById('telefono').value
-            };
-            const res = await fetch('/api/send-code', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            });
-            const json = await res.json();
-            const box = document.getElementById('res1');
-            box.style.display = 'block';
-            box.innerText = JSON.stringify(json, null, 2);
-            if(json.code) {
-                document.getElementById('pinCode').value = json.code;
-            }
-        }
-
-        async function verificarCodigo() {
-            const data = {
-                deviceId: document.getElementById('deviceId').value,
-                code: document.getElementById('pinCode').value
-            };
-            const res = await fetch('/api/verify-code', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            });
-            const json = await res.json();
-            const box = document.getElementById('res2');
-            box.style.display = 'block';
-            box.innerText = JSON.stringify(json, null, 2);
-        }
-
-        async function consultarEstado() {
-            const devId = document.getElementById('deviceId').value;
-            const res = await fetch('/api/check-status?deviceId=' + devId);
-            const json = await res.json();
-            const box = document.getElementById('res3');
-            box.style.display = 'block';
-            box.innerText = JSON.stringify(json, null, 2);
-        }
-    </script>
 </body>
 </html>
 """
