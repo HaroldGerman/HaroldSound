@@ -29,7 +29,7 @@ logger = logging.getLogger("main")
 app = FastAPI(
     title="HaroldSound API & Admin Panel",
     description="Backend optimizado y seguro para HaroldSound con autenticación PIN y JWT.",
-    version="2.2.0"
+    version="2.2.1"
 )
 
 app.add_middleware(
@@ -391,18 +391,101 @@ async def reproductor_web():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HaroldSound - Server & Player</title>
+    <title>HaroldSound - Pruebas de Verificación PIN</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        body { background:#121212; color:#fff; font-family:'Outfit', sans-serif; text-align:center; padding:3rem; }
-        h1 { color:#1DB954; font-size:2.5rem; }
-        .btn { display:inline-block; padding:12px 24px; background:#1DB954; color:#fff; text-decoration:none; border-radius:99px; font-weight:bold; margin-top:1.5rem; }
+        body { background:#121212; color:#fff; font-family:'Outfit', sans-serif; padding:2rem; max-width:650px; margin:0 auto; }
+        h1 { color:#1DB954; font-size:2rem; text-align:center; }
+        .card { background:#181818; border:1px solid #282828; border-radius:14px; padding:1.5rem; margin-bottom:1.5rem; }
+        h3 { color:#38bdf8; margin-top:0; }
+        label { display:block; font-size:0.85rem; color:#b3b3b3; margin-bottom:4px; }
+        input { width:100%; padding:10px 12px; border-radius:8px; border:1px solid #333; background:#242424; color:#fff; box-sizing:border-box; margin-bottom:1rem; font-size:0.95rem; }
+        .btn { width:100%; padding:12px; border:none; border-radius:99px; background:#1DB954; color:#fff; font-weight:bold; cursor:pointer; font-size:1rem; }
+        .btn-sec { background:#0284c7; margin-top:0.5rem; }
+        .res-box { background:#000; border:1px solid #333; padding:12px; border-radius:8px; font-family:monospace; color:#34d399; font-size:0.85rem; white-space:pre-wrap; margin-top:1rem; display:none; }
     </style>
 </head>
 <body>
-    <h1>HaroldSound Server 🎵</h1>
-    <p>Servidor activo en Render / Cloud. Para administrar accesos, entra al Panel de Control:</p>
-    <a href="/admin" class="btn">👑 Entrar al Panel de Control Admin</a>
+    <h1>🎵 HaroldSound Testing Sandbox</h1>
+    <p style="text-align:center; color:#b3b3b3;">Prueba el flujo de registro, verificación de PIN y aprobación en vivo:</p>
+
+    <!-- PASO 1 -->
+    <div class="card">
+        <h3>Paso 1: Solicitar Código PIN</h3>
+        <label>Nombre del Usuario:</label>
+        <input type="text" id="nombre" value="Carlos Prueba">
+        <label>Teléfono:</label>
+        <input type="text" id="telefono" value="987654321">
+        <label>ID del Dispositivo (deviceId):</label>
+        <input type="text" id="deviceId" value="dev_demo_99">
+        <button onclick="enviarCodigo()" class="btn">1. Enviar Registro y Generar PIN</button>
+        <div id="res1" class="res-box"></div>
+    </div>
+
+    <!-- PASO 2 -->
+    <div class="card">
+        <h3>Paso 2: Confirmar Código PIN</h3>
+        <label>Código PIN de 4 dígitos:</label>
+        <input type="text" id="pinCode" placeholder="Ejemplo: 4829">
+        <button onclick="verificarCodigo()" class="btn btn-sec">2. Confirmar Código PIN</button>
+        <div id="res2" class="res-box"></div>
+    </div>
+
+    <!-- PASO 3 -->
+    <div class="card">
+        <h3>Paso 3: Aprobar desde el Panel Admin</h3>
+        <p>Una vez verificado el PIN, entra al Panel de Control para hacer clic en <strong>✅ APROBAR</strong>:</p>
+        <a href="/admin" target="_blank" class="btn" style="display:block; text-align:center; text-decoration:none;">👑 Abrir Panel Administrador /admin</a>
+        <button onclick="consultarEstado()" class="btn btn-sec" style="margin-top:1rem;">3. Consultar Estado Actual (check-status)</button>
+        <div id="res3" class="res-box"></div>
+    </div>
+
+    <script>
+        async function enviarCodigo() {
+            const data = {
+                deviceId: document.getElementById('deviceId').value,
+                nombre: document.getElementById('nombre').value,
+                telefono: document.getElementById('telefono').value
+            };
+            const res = await fetch('/api/send-code', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const json = await res.json();
+            const box = document.getElementById('res1');
+            box.style.display = 'block';
+            box.innerText = JSON.stringify(json, null, 2);
+            if(json.code) {
+                document.getElementById('pinCode').value = json.code;
+            }
+        }
+
+        async function verificarCodigo() {
+            const data = {
+                deviceId: document.getElementById('deviceId').value,
+                code: document.getElementById('pinCode').value
+            };
+            const res = await fetch('/api/verify-code', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const json = await res.json();
+            const box = document.getElementById('res2');
+            box.style.display = 'block';
+            box.innerText = JSON.stringify(json, null, 2);
+        }
+
+        async function consultarEstado() {
+            const devId = document.getElementById('deviceId').value;
+            const res = await fetch('/api/check-status?deviceId=' + devId);
+            const json = await res.json();
+            const box = document.getElementById('res3');
+            box.style.display = 'block';
+            box.innerText = JSON.stringify(json, null, 2);
+        }
+    </script>
 </body>
 </html>
 """
