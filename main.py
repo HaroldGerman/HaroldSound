@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 app = FastAPI(title="HaroldSound API & Admin Panel")
 
+# Habilitar CORS para permitir solicitudes desde Android, web apps y Render
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -108,12 +109,14 @@ async def registrar_usuario(data: RegisterRequest):
         raise HTTPException(status_code=400, detail="Faltan datos de registro")
 
     if dev_id in users:
+        # Si ya está registrado, mantener estado actual
         return {
             "status": "success",
             "user_status": users[dev_id].get("status", "pending"),
             "message": "Dispositivo ya registrado"
         }
 
+    # Registro nuevo en estado PENDIENTE
     users[dev_id] = {
         "deviceId": dev_id,
         "nombre": data.nombre.strip(),
@@ -153,6 +156,7 @@ async def verificar_estado_usuario(deviceId: str):
 async def admin_panel(passkey: str = ""):
     users = cargar_usuarios_dict()
     
+    # Renderizar lista de usuarios
     users_html = ""
     for dev_id, user in users.items():
         status = user.get("status", "pending")
@@ -294,98 +298,81 @@ async def admin_action(passkey: str = Form(...), deviceId: str = Form(...), acti
 
 @app.get("/descargar")
 async def descargar_cancion(url: str, request: Request):
-    player_clients = [
-        ['ios', 'android', 'mweb'],
-        ['web_embedded', 'tv'],
-        ['android']
-    ]
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': f'{DESCARGAS_DIR}/%(title)s.%(ext)s',
+        'postprocessors': [
+            {
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            },
+            {
+                'key': 'FFmpegMetadata',
+                'add_metadata': True,
+            }
+        ],
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web', 'tv'],
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        },
+        'nocheckcertificate': True,
+        'quiet': True,
+        'noplaylist': True,
+        'no_warnings': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            if info and 'entries' in info and len(info['entries']) > 0:
+                info = info['entries'][0]
+            
+            nombre_archivo_original = ydl.prepare_filename(info)
+            nombre_final = nombre_archivo_original.rsplit('.', 1)[0] + '.mp3'
+            
+            solo_nombre = obtener_nombre_archivo_real(nombre_final)
+            titulo_cancion = info.get('title', solo_nombre.rsplit('.', 1)[0])
+            thumbnail = info.get('thumbnail') or f"https://img.youtube.com/vi/{info.get('id', '')}/hqdefault.jpg"
+            canal = info.get('uploader') or info.get('channel', 'Desconocido')
+            
+            duracion_sec = info.get('duration')
+            duracion_str = ""
+            if duracion_sec:
+                mins = int(duracion_sec) // 60
+                secs = int(duracion_sec) % 60
+                duracion_str = f"{mins}:{secs:02d}"
 
-    last_error = None
-    for clients in player_clients:
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': f'{DESCARGAS_DIR}/%(title)s.%(ext)s',
-            'postprocessors': [
-                {
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                },
-                {
-                    'key': 'FFmpegMetadata',
-                    'add_metadata': True,
-                }
-            ],
-            'extractor_args': {
-                'youtube': {
-                    'player_client': clients,
-                    'skip': ['webpage', 'configs'],
-                }
-            },
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
-            },
-            'nocheckcertificate': True,
-            'quiet': True,
-            'noplaylist': True,
-            'no_warnings': True,
-            'ignoreerrors': False,
+            meta_dict = cargar_metadatos_dict()
+            meta_dict[solo_nombre] = {
+                "titulo": titulo_cancion,
+                "thumbnail": thumbnail,
+                "canal": canal,
+                "duracion": duracion_str,
+                "id": info.get('id', '')
+            }
+            guardar_metadatos_dict(meta_dict)
+
+            base_url = str(request.base_url).rstrip('/')
+            url_encoded = quote(solo_nombre)
+            url_publica = f"{base_url}/descargas/{url_encoded}"
+                
+        return {
+            "status": "success",
+            "url": url_publica,
+            "titulo": titulo_cancion,
+            "archivo": solo_nombre,
+            "thumbnail": thumbnail,
+            "canal": canal,
+            "duracion": duracion_str
         }
-
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if info and 'entries' in info and len(info['entries']) > 0:
-                    info = info['entries'][0]
-
-                nombre_archivo_original = ydl.prepare_filename(info)
-                nombre_final = nombre_archivo_original.rsplit('.', 1)[0] + '.mp3'
-
-                solo_nombre = obtener_nombre_archivo_real(nombre_final)
-                titulo_cancion = info.get('title', solo_nombre.rsplit('.', 1)[0])
-                thumbnail = info.get('thumbnail') or f"https://img.youtube.com/vi/{info.get('id', '')}/hqdefault.jpg"
-                canal = info.get('uploader') or info.get('channel', 'Desconocido')
-
-                duracion_sec = info.get('duration')
-                duracion_str = ""
-                if duracion_sec:
-                    mins = int(duracion_sec) // 60
-                    secs = int(duracion_sec) % 60
-                    duracion_str = f"{mins}:{secs:02d}"
-
-                meta_dict = cargar_metadatos_dict()
-                meta_dict[solo_nombre] = {
-                    "titulo": titulo_cancion,
-                    "thumbnail": thumbnail,
-                    "canal": canal,
-                    "duracion": duracion_str,
-                    "id": info.get('id', '')
-                }
-                guardar_metadatos_dict(meta_dict)
-
-                base_url = str(request.base_url).rstrip('/')
-                url_encoded = quote(solo_nombre)
-                url_publica = f"{base_url}/descargas/{url_encoded}"
-
-                return {
-                    "status": "success",
-                    "url": url_publica,
-                    "titulo": titulo_cancion,
-                    "archivo": solo_nombre,
-                    "thumbnail": thumbnail,
-                    "canal": canal,
-                    "duracion": duracion_str
-                }
-        except Exception as e:
-            last_error = e
-            print(f"Intento con clientes {clients} falló: {e}")
-
-    # Si la restricción de edad de YouTube persiste
-    err_msg = str(last_error)
-    if "Sign in to confirm your age" in err_msg or "inappropriate for some users" in err_msg:
-        err_msg = "Esta canción tiene restricción de edad en YouTube y requiere autenticación."
-
-    return {"status": "error", "message": err_msg}
+    except Exception as e:
+        print(f"Error descargando {url}: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @app.get("/buscar")
@@ -394,11 +381,11 @@ async def buscar_cancion(termino: str):
         'format': 'bestaudio/best',
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'mweb', 'web_embedded'],
+                'player_client': ['android', 'web', 'tv'],
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         },
         'quiet': True,
         'extract_flat': True,
