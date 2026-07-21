@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import random
 import logging
@@ -11,7 +12,7 @@ logger = logging.getLogger("user_service")
 class UserService:
     """
     Servicio de gestión de usuarios, verificación por código PIN de 4 dígitos
-    vía WhatsApp/SMS y dispositivos registrados para HaroldSound.
+    vía WhatsApp/SMS y validación de número de teléfono único para HaroldSound.
     """
 
     def __init__(self, users_file: str = "users.json"):
@@ -44,17 +45,46 @@ class UserService:
 
     def enviar_codigo_verificacion(self, device_id: str, nombre: str, telefono: str) -> Dict[str, Any]:
         """
-        Genera un código PIN de 4 dígitos.
-        SEGURIDAD: No se retorna el código en la respuesta pública HTTP para evitar que la app lo sepa de antemano.
-        El código únicamente es visible en el panel /admin para ser enviado por WhatsApp/SMS.
+        Genera un código PIN de 4 dígitos para un número de teléfono.
+        Garantiza que cada número de teléfono solo pueda ser registrado 1 sola vez en el sistema.
         """
         dev_id = device_id.strip()
+        nombre_clean = nombre.strip()
+        tel_raw = telefono.strip()
+        tel_digits = re.sub(r"\D", "", tel_raw)
+
+        if not tel_digits or len(tel_digits) < 7:
+            return {
+                "status": "error",
+                "message": "Por favor ingresa un número de celular válido."
+            }
+
         users = self.cargar_usuarios()
 
+        # 1. SEGURIDAD: Verificar si el NÚMERO DE TELÉFONO ya está registrado en el sistema
+        for existing_id, u_info in users.items():
+            existing_tel_digits = re.sub(r"\D", "", u_info.get("telefono", ""))
+            if existing_tel_digits == tel_digits:
+                existing_status = u_info.get("status", "unregistered")
+
+                # Si es un dispositivo diferente intentando usar el mismo teléfono
+                if existing_id != dev_id:
+                    if existing_status == "approved":
+                        logger.warning(f"Intento de duplicado: Teléfono {tel_raw} ya registrado en dispositivo {existing_id}")
+                        return {
+                            "status": "error",
+                            "message": "⚠️ Este número de celular ya está registrado y activo en otro dispositivo."
+                        }
+                    elif existing_status == "blocked":
+                        return {
+                            "status": "error",
+                            "message": "🚫 Este número de celular ha sido bloqueado por el administrador."
+                        }
+
+        # 2. Si el dispositivo ya tiene un registro previo en estado final
         if dev_id in users:
             user = users[dev_id]
             status = user.get("status", "unregistered")
-
             if status in ["approved", "blocked"]:
                 return {
                     "status": "success",
@@ -67,27 +97,25 @@ class UserService:
 
         users[dev_id] = {
             "deviceId": dev_id,
-            "nombre": nombre.strip(),
-            "telefono": telefono.strip(),
-            "status": "code_sent",  # Esperando que el usuario reciba el PIN por WhatsApp e ingrese en la app
+            "nombre": nombre_clean,
+            "telefono": tel_raw,
+            "status": "code_sent",
             "verification_code": pin_code,
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         self.guardar_usuarios(users)
 
-        logger.info(f"🔑 Código PIN {pin_code} generado de forma segura para {nombre} ({telefono}) [ID: {dev_id}]")
+        logger.info(f"🔑 Código PIN {pin_code} generado para {nombre_clean} ({tel_raw}) [ID: {dev_id}]")
 
-        # NO retornamos 'code' a la app por seguridad
         return {
             "status": "success",
             "user_status": "code_sent",
-            "message": "Solicitud recibida. Se enviará un código PIN de 4 dígitos a tu celular/WhatsApp."
+            "message": "Solicitud recibida. Se enviará un código PIN de 4 dígitos a tu número de WhatsApp."
         }
 
     def verificar_codigo(self, device_id: str, code: str) -> Dict[str, Any]:
         """
         Valida el código PIN de 4 dígitos ingresado por el usuario en la app.
-        Si coincide, pasa al estado 'pending' para aprobación final en el panel /admin.
         """
         dev_id = device_id.strip()
         clean_code = code.strip()
