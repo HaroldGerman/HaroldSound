@@ -1,0 +1,11 @@
+descargas/
+*.mp3
+*.webm
+metadata.json
+users.json
+__pycache__/
+*.pyc
+.env
+.idea/
+.vscode/
+scrip_Yt.py
