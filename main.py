@@ -12,7 +12,6 @@ from urllib.parse import quote
 
 app = FastAPI(title="HaroldSound API & Admin Panel")
 
-# Habilitar CORS para permitir solicitudes desde Android, web apps y Render
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,6 +23,7 @@ app.add_middleware(
 DESCARGAS_DIR = "descargas"
 METADATA_FILE = os.path.join(DESCARGAS_DIR, "metadata.json")
 USERS_FILE = "users.json"
+COOKIES_FILE = "cookies.txt"
 ADMIN_PASSWORD = "harold_admin_2026"
 
 if not os.path.exists(DESCARGAS_DIR):
@@ -109,14 +109,12 @@ async def registrar_usuario(data: RegisterRequest):
         raise HTTPException(status_code=400, detail="Faltan datos de registro")
 
     if dev_id in users:
-        # Si ya está registrado, mantener estado actual
         return {
             "status": "success",
             "user_status": users[dev_id].get("status", "pending"),
             "message": "Dispositivo ya registrado"
         }
 
-    # Registro nuevo en estado PENDIENTE
     users[dev_id] = {
         "deviceId": dev_id,
         "nombre": data.nombre.strip(),
@@ -156,7 +154,6 @@ async def verificar_estado_usuario(deviceId: str):
 async def admin_panel(passkey: str = ""):
     users = cargar_usuarios_dict()
     
-    # Renderizar lista de usuarios
     users_html = ""
     for dev_id, user in users.items():
         status = user.get("status", "pending")
@@ -326,6 +323,10 @@ async def descargar_cancion(url: str, request: Request):
         'no_warnings': True,
     }
     
+    # Cargar cookies de YouTube si están presentes para pasar la autenticación de edad/bot
+    if os.path.exists(COOKIES_FILE):
+        ydl_opts['cookiefile'] = COOKIES_FILE
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -392,6 +393,9 @@ async def buscar_cancion(termino: str):
         'noplaylist': True,
         'no_warnings': True,
     }
+    
+    if os.path.exists(COOKIES_FILE):
+        ydl_opts['cookiefile'] = COOKIES_FILE
     
     lista_canciones = []
     try:
