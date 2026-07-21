@@ -7,6 +7,21 @@ logger = logging.getLogger("youtube_service")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 
+class YtDlpNullLogger:
+    """
+    Logger nulo para evitar que yt-dlp escriba errores no capturados a sys.stderr
+    durante las pruebas de estrategias secundarias.
+    """
+    def debug(self, msg: str):
+        pass
+
+    def warning(self, msg: str):
+        pass
+
+    def error(self, msg: str):
+        pass
+
+
 class YoutubeService:
     """
     Servicio centralizado e independiente para gestionar la interacción con YouTube mediante yt-dlp.
@@ -30,6 +45,7 @@ class YoutubeService:
             'quiet': True,
             'noplaylist': True,
             'no_warnings': True,
+            'logger': YtDlpNullLogger(),
             'concurrent_fragment_downloads': 4,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -54,9 +70,9 @@ class YoutubeService:
         Busca canciones en YouTube de forma robusta con múltiples estrategias de reintento.
         """
         strategies = [
-            {'use_cookies': True, 'client_strategy': ['android_vr', 'web', 'tv']},
             {'use_cookies': False, 'client_strategy': ['android_vr', 'web', 'tv']},
-            {'use_cookies': True, 'client_strategy': ['android', 'mweb']},
+            {'use_cookies': True, 'client_strategy': ['android_vr', 'web', 'tv']},
+            {'use_cookies': False, 'client_strategy': ['android', 'mweb']},
             {'use_cookies': False, 'client_strategy': None},
         ]
 
@@ -140,9 +156,9 @@ class YoutubeService:
         reutilizando la misma lógica centralizada y ejecutando reintentos con fallbacks.
         """
         strategies = [
-            {'use_cookies': True, 'client_strategy': ['android_vr', 'web', 'tv']},
             {'use_cookies': False, 'client_strategy': ['android_vr', 'web', 'tv']},
-            {'use_cookies': True, 'client_strategy': ['android', 'mweb']},
+            {'use_cookies': True, 'client_strategy': ['android_vr', 'web', 'tv']},
+            {'use_cookies': False, 'client_strategy': ['android', 'mweb']},
             {'use_cookies': False, 'client_strategy': None},
         ]
 
