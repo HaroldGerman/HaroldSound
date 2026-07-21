@@ -296,7 +296,7 @@ async def admin_action(passkey: str = Form(...), deviceId: str = Form(...), acti
 @app.get("/descargar")
 async def descargar_cancion(url: str, request: Request):
     ydl_opts = {
-        'format': 'bestaudio/best',
+        'format': 'bestaudio/best/ba/b',
         'outtmpl': f'{DESCARGAS_DIR}/%(title)s.%(ext)s',
         'postprocessors': [
             {
@@ -323,7 +323,6 @@ async def descargar_cancion(url: str, request: Request):
         'no_warnings': True,
     }
     
-    # Cargar cookies de YouTube si están presentes para pasar la autenticación de edad/bot
     if os.path.exists(COOKIES_FILE):
         ydl_opts['cookiefile'] = COOKIES_FILE
     
@@ -379,7 +378,7 @@ async def descargar_cancion(url: str, request: Request):
 @app.get("/buscar")
 async def buscar_cancion(termino: str):
     ydl_opts = {
-        'format': 'bestaudio/best',
+        'format': 'bestaudio/best/ba/b',
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'web', 'tv'],
