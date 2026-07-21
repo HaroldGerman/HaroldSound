@@ -1,16 +1,31 @@
-from fastapi import FastAPI, Request, HTTPException, Form, Depends, Header
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import yt_dlp
 import os
-import json
+import logging
 import socket
-from datetime import datetime
 from urllib.parse import quote
 
-app = FastAPI(title="HaroldSound API & Admin Panel")
+from fastapi import FastAPI, Request, HTTPException, Form
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from services.youtube_service import YoutubeService
+from services.user_service import UserService
+from services.storage_service import StorageService
+
+# Configuración de Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("main")
+
+# Inicialización de la aplicación FastAPI
+app = FastAPI(
+    title="HaroldSound API & Admin Panel",
+    description="Backend optimizado y robusto para HaroldSound con integración resiliente a YouTube.",
+    version="2.0.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,15 +35,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DESCARGAS_DIR = "descargas"
-METADATA_FILE = os.path.join(DESCARGAS_DIR, "metadata.json")
-USERS_FILE = "users.json"
-COOKIES_FILE = "cookies.txt"
-ADMIN_PASSWORD = "harold_admin_2026"
+# Variables de entorno y configuración general
+DESCARGAS_DIR = os.getenv("DESCARGAS_DIR", "descargas")
+USERS_FILE = os.getenv("USERS_FILE", "users.json")
+COOKIES_FILE = os.getenv("COOKIES_FILE", "cookies.txt")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "harold_admin_2026")
+PORT = int(os.getenv("PORT", 8000))
 
-if not os.path.exists(DESCARGAS_DIR):
-    os.makedirs(DESCARGAS_DIR)
+# Inicialización de servicios desacoplados
+youtube_service = YoutubeService(cookies_file=COOKIES_FILE, downloads_dir=DESCARGAS_DIR)
+user_service = UserService(users_file=USERS_FILE)
+storage_service = StorageService(downloads_dir=DESCARGAS_DIR)
 
+# Montar directorio estático para descargas
 app.mount("/descargas", StaticFiles(directory=DESCARGAS_DIR), name="descargas")
 
 
@@ -38,7 +57,10 @@ class RegisterRequest(BaseModel):
     telefono: str
 
 
-def obtener_ip_local():
+def obtener_ip_local() -> str:
+    """
+    Obtiene la dirección IP local para facilitar pruebas en red local.
+    """
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -49,110 +71,34 @@ def obtener_ip_local():
         return "127.0.0.1"
 
 
-def cargar_usuarios_dict() -> dict:
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-
-def guardar_usuarios_dict(users_dict: dict):
-    try:
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users_dict, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error guardando usuarios: {e}")
-
-
-def cargar_metadatos_dict() -> dict:
-    if os.path.exists(METADATA_FILE):
-        try:
-            with open(METADATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-
-def guardar_metadatos_dict(meta_dict: dict):
-    try:
-        with open(METADATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(meta_dict, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error guardando metadatos: {e}")
-
-
-def obtener_nombre_archivo_real(nombre_final: str) -> str:
-    if os.path.exists(nombre_final):
-        return os.path.basename(nombre_final)
-    
-    base_sin_ext = os.path.splitext(os.path.basename(nombre_final))[0]
-    if os.path.exists(DESCARGAS_DIR):
-        for filename in os.listdir(DESCARGAS_DIR):
-            if filename.endswith(".mp3"):
-                if base_sin_ext.lower() in filename.lower() or filename.lower().startswith(base_sin_ext[:15].lower()):
-                    return filename
-    return os.path.basename(nombre_final)
-
-
-# --- SISTEMA DE REGISTRO Y APROBACIÓN DE USUARIOS ---
+# --- ENDPOINTS DE REGISTRO Y DISPOSITIVOS ---
 
 @app.post("/api/register")
 async def registrar_usuario(data: RegisterRequest):
-    users = cargar_usuarios_dict()
-    dev_id = data.deviceId.strip()
+    if not data.deviceId or not data.nombre or not data.telefono:
+        raise HTTPException(status_code=400, detail="Faltan datos requeridos para el registro")
 
-    if not dev_id or not data.nombre or not data.telefono:
-        raise HTTPException(status_code=400, detail="Faltan datos de registro")
-
-    if dev_id in users:
-        return {
-            "status": "success",
-            "user_status": users[dev_id].get("status", "pending"),
-            "message": "Dispositivo ya registrado"
-        }
-
-    users[dev_id] = {
-        "deviceId": dev_id,
-        "nombre": data.nombre.strip(),
-        "telefono": data.telefono.strip(),
-        "status": "pending",
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-    guardar_usuarios_dict(users)
-
-    return {
-        "status": "success",
-        "user_status": "pending",
-        "message": "Registro recibido. Esperando aprobación del administrador."
-    }
+    res = user_service.registrar_usuario(
+        device_id=data.deviceId,
+        nombre=data.nombre,
+        telefono=data.telefono
+    )
+    return res
 
 
 @app.get("/api/check-status")
 async def verificar_estado_usuario(deviceId: str):
-    users = cargar_usuarios_dict()
-    dev_id = deviceId.strip()
-
-    if dev_id not in users:
+    if not deviceId or not deviceId.strip():
         return {"registered": False, "status": "unregistered"}
 
-    user_info = users[dev_id]
-    return {
-        "registered": True,
-        "status": user_info.get("status", "pending"),
-        "nombre": user_info.get("nombre", ""),
-        "telefono": user_info.get("telefono", "")
-    }
+    return user_service.verificar_estado(device_id=deviceId)
 
 
 # --- PANEL ADMINISTRADOR WEB EN /admin ---
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_panel(passkey: str = ""):
-    users = cargar_usuarios_dict()
+    users = user_service.cargar_usuarios()
     
     users_html = ""
     for dev_id, user in users.items():
@@ -276,18 +222,7 @@ async def admin_action(passkey: str = Form(...), deviceId: str = Form(...), acti
     if passkey != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Contraseña de administrador incorrecta")
 
-    users = cargar_usuarios_dict()
-    dev_id = deviceId.strip()
-
-    if dev_id in users:
-        if action == "approve":
-            users[dev_id]["status"] = "approved"
-        elif action == "block":
-            users[dev_id]["status"] = "blocked"
-        elif action == "delete":
-            del users[dev_id]
-        guardar_usuarios_dict(users)
-
+    user_service.actualizar_estado(device_id=deviceId, accion=action)
     return RedirectResponse(url=f"/admin?passkey={passkey}", status_code=303)
 
 
@@ -295,185 +230,67 @@ async def admin_action(passkey: str = Form(...), deviceId: str = Form(...), acti
 
 @app.get("/descargar")
 async def descargar_cancion(url: str, request: Request):
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': f'{DESCARGAS_DIR}/%(title)s.%(ext)s',
-        'postprocessors': [
-            {
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            },
-            {
-                'key': 'FFmpegMetadata',
-                'add_metadata': True,
-            }
-        ],
-        'nocheckcertificate': True,
-        'quiet': True,
-        'noplaylist': True,
-        'no_warnings': True,
-        'extractor_args': {'youtube': ['client=android,mweb']},
-    }
-
-    if os.path.exists(COOKIES_FILE):
-        ydl_opts['cookiefile'] = COOKIES_FILE
-
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            if info and 'entries' in info and len(info['entries']) > 0:
-                info = info['entries'][0]
-            
-            nombre_archivo_original = ydl.prepare_filename(info)
-            nombre_final = nombre_archivo_original.rsplit('.', 1)[0] + '.mp3'
-            
-            solo_nombre = obtener_nombre_archivo_real(nombre_final)
-            titulo_cancion = info.get('title', solo_nombre.rsplit('.', 1)[0])
-            thumbnail = info.get('thumbnail') or f"https://img.youtube.com/vi/{info.get('id', '')}/hqdefault.jpg"
-            canal = info.get('uploader') or info.get('channel', 'Desconocido')
-            
-            duracion_sec = info.get('duration')
-            duracion_str = ""
-            if duracion_sec:
-                mins = int(duracion_sec) // 60
-                secs = int(duracion_sec) % 60
-                duracion_str = f"{mins}:{secs:02d}"
+        resultado = youtube_service.download_audio(url)
+        solo_nombre = resultado["archivo"]
+        
+        # Guardar metadatos en almacenamiento local
+        storage_service.guardar_cancion_metadata(
+            archivo=solo_nombre,
+            titulo=resultado["titulo"],
+            thumbnail=resultado["thumbnail"],
+            canal=resultado["canal"],
+            duracion=resultado["duracion"],
+            video_id=resultado.get("id", "")
+        )
 
-            meta_dict = cargar_metadatos_dict()
-            meta_dict[solo_nombre] = {
-                "titulo": titulo_cancion,
-                "thumbnail": thumbnail,
-                "canal": canal,
-                "duracion": duracion_str,
-                "id": info.get('id', '')
-            }
-            guardar_metadatos_dict(meta_dict)
+        base_url = str(request.base_url).rstrip('/')
+        url_encoded = quote(solo_nombre)
+        url_publica = f"{base_url}/descargas/{url_encoded}"
 
-            base_url = str(request.base_url).rstrip('/')
-            url_encoded = quote(solo_nombre)
-            url_publica = f"{base_url}/descargas/{url_encoded}"
-                
-            return {
-                "status": "success",
-                "url": url_publica,
-                "titulo": titulo_cancion,
-                "archivo": solo_nombre,
-                "thumbnail": thumbnail,
-                "canal": canal,
-                "duracion": duracion_str
-            }
+        return {
+            "status": "success",
+            "url": url_publica,
+            "titulo": resultado["titulo"],
+            "archivo": solo_nombre,
+            "thumbnail": resultado["thumbnail"],
+            "canal": resultado["canal"],
+            "duracion": resultado["duracion"]
+        }
     except Exception as e:
-        print(f"Error descargando {url}: {e}")
+        logger.error(f"Error procesando descarga para '{url}': {e}")
         return {"status": "error", "message": str(e)}
 
 
 @app.get("/buscar")
 async def buscar_cancion(termino: str):
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'extract_flat': True,
-        'noplaylist': True,
-        'no_warnings': True,
-        'extractor_args': {'youtube': ['client=android,mweb']},
-    }
+    if not termino or not termino.strip():
+        return {"canciones": []}
 
-    if os.path.exists(COOKIES_FILE):
-        ydl_opts['cookiefile'] = COOKIES_FILE
-    
-    lista_canciones = []
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            resultados = ydl.extract_info(f"ytsearch20:{termino}", download=False)
-            
-            if resultados and 'entries' in resultados:
-                for video in resultados['entries']:
-                    if not video:
-                        continue
-                    
-                    ie_key = video.get('ie_key', '')
-                    url_video = video.get('url') or video.get('webpage_url') or ''
-                    video_id = video.get('id', '')
-                    
-                    es_video = (ie_key == 'Youtube') or ('watch?v=' in url_video) or (len(video_id) == 11 and not video_id.startswith('UC'))
-                    
-                    if es_video:
-                        if not url_video.startswith('http'):
-                            url_video = f"https://www.youtube.com/watch?v={video_id}"
-                        
-                        duracion_sec = video.get('duration')
-                        duracion_str = ""
-                        if duracion_sec:
-                            mins = int(duracion_sec) // 60
-                            secs = int(duracion_sec) % 60
-                            duracion_str = f"{mins}:{secs:02d}"
-                        
-                        thumbnail_url = video.get('thumbnail')
-                        if not thumbnail_url and video_id:
-                            thumbnail_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
-
-                        lista_canciones.append({
-                            "id": video_id,
-                            "titulo": video.get('title', 'Sin título'),
-                            "url": url_video,
-                            "duracion": duracion_str,
-                            "canal": video.get('uploader') or video.get('channel', 'YouTube'),
-                            "thumbnail": thumbnail_url
-                        })
-                        
-                        if len(lista_canciones) >= 16:  
-                            break
-    except Exception as e:
-        print(f"Error en búsqueda: {e}")
-            
-    return {"canciones": lista_canciones}
+    canciones = youtube_service.search_songs(query=termino, max_results=16)
+    return {"canciones": canciones}
 
 
 @app.get("/canciones")
 async def listar_canciones(request: Request):
     base_url = str(request.base_url).rstrip('/')
-    canciones = []
-    meta_dict = cargar_metadatos_dict()
-    
-    if os.path.exists(DESCARGAS_DIR):
-        for archivo in os.listdir(DESCARGAS_DIR):
-            if archivo.endswith(".mp3"):
-                url_encoded = quote(archivo)
-                info_meta = meta_dict.get(archivo, {})
-                
-                titulo = info_meta.get("titulo", archivo.rsplit('.', 1)[0])
-                thumbnail = info_meta.get("thumbnail", "")
-                canal = info_meta.get("canal", "Colección")
-                duracion = info_meta.get("duracion", "")
-
-                canciones.append({
-                    "titulo": titulo,
-                    "archivo": archivo,
-                    "url": f"{base_url}/descargas/{url_encoded}",
-                    "thumbnail": thumbnail,
-                    "canal": canal,
-                    "duracion": duracion
-                })
-                
+    canciones = storage_service.listar_canciones(base_url=base_url)
     return {"canciones": canciones}
 
 
 @app.delete("/canciones/{archivo}")
 async def eliminar_cancion(archivo: str):
-    filepath = os.path.join(DESCARGAS_DIR, archivo)
-    if os.path.exists(filepath):
-        try:
-            os.remove(filepath)
-            meta_dict = cargar_metadatos_dict()
-            if archivo in meta_dict:
-                del meta_dict[archivo]
-                guardar_metadatos_dict(meta_dict)
+    try:
+        eliminado = storage_service.eliminar_cancion(archivo=archivo)
+        if eliminado:
             return {"status": "success", "message": f"Canción '{archivo}' eliminada correctamente."}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error al eliminar archivo: {str(e)}")
-    else:
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        else:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al eliminar canción '{archivo}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error al eliminar archivo: {str(e)}")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -506,6 +323,6 @@ if __name__ == "__main__":
     ip_local = obtener_ip_local()
     print(f"\n==========================================")
     print(f" 🎵 HaroldSound Server iniciado correctamente!")
-    print(f" 👑 Panel Admin Web: http://localhost:8000/admin")
+    print(f" 👑 Panel Admin Web: http://localhost:{PORT}/admin")
     print(f"==========================================\n")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=True)
