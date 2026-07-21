@@ -295,7 +295,6 @@ async def admin_action(passkey: str = Form(...), deviceId: str = Form(...), acti
 
 @app.get("/descargar")
 async def descargar_cancion(url: str, request: Request):
-    # Cliente android_vr para omitir anti-bot de datacenter y descarga ultrarrápida
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': f'{DESCARGAS_DIR}/%(title)s.%(ext)s',
@@ -310,16 +309,14 @@ async def descargar_cancion(url: str, request: Request):
                 'add_metadata': True,
             }
         ],
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android_vr', 'web', 'tv']
-            }
-        },
         'nocheckcertificate': True,
         'quiet': True,
         'noplaylist': True,
         'no_warnings': True,
     }
+
+    if os.path.exists(COOKIES_FILE):
+        ydl_opts['cookiefile'] = COOKIES_FILE
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -374,16 +371,14 @@ async def descargar_cancion(url: str, request: Request):
 async def buscar_cancion(termino: str):
     ydl_opts = {
         'format': 'bestaudio/best',
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android_vr', 'web', 'tv']
-            }
-        },
         'quiet': True,
         'extract_flat': True,
         'noplaylist': True,
         'no_warnings': True,
     }
+
+    if os.path.exists(COOKIES_FILE):
+        ydl_opts['cookiefile'] = COOKIES_FILE
     
     lista_canciones = []
     try:
