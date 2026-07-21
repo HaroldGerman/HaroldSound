@@ -3,7 +3,8 @@ import logging
 import socket
 from urllib.parse import quote
 
-from fastapi import FastAPI, Request, HTTPException, Form
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request, HTTPException, Form, Response, Cookie
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,10 @@ from pydantic import BaseModel
 from services.youtube_service import YoutubeService
 from services.user_service import UserService
 from services.storage_service import StorageService
+from services.auth_service import AuthService
+
+# Cargar variables de entorno desde .env si existe
+load_dotenv()
 
 # Configuración de Logging
 logging.basicConfig(
@@ -23,8 +28,8 @@ logger = logging.getLogger("main")
 # Inicialización de la aplicación FastAPI
 app = FastAPI(
     title="HaroldSound API & Admin Panel",
-    description="Backend optimizado y robusto para HaroldSound con integración resiliente a YouTube.",
-    version="2.0.1"
+    description="Backend optimizado y seguro para HaroldSound con autenticación JWT HttpOnly.",
+    version="2.1.0"
 )
 
 app.add_middleware(
@@ -39,14 +44,10 @@ app.add_middleware(
 DESCARGAS_DIR = os.getenv("DESCARGAS_DIR", "descargas")
 USERS_FILE = os.getenv("USERS_FILE", "users.json")
 COOKIES_FILE = os.getenv("COOKIES_FILE", "cookies.txt")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 PORT = int(os.getenv("PORT", 8000))
 
-if not ADMIN_PASSWORD:
-    ADMIN_PASSWORD = "harold_admin_2026"
-    logger.warning("⚠️ ADVERTENCIA DE SEGURIDAD: Usando clave por defecto 'harold_admin_2026'. Se recomienda configurar la variable de entorno ADMIN_PASSWORD en producción.")
-
 # Inicialización de servicios desacoplados
+auth_service = AuthService()
 youtube_service = YoutubeService(cookies_file=COOKIES_FILE, downloads_dir=DESCARGAS_DIR)
 user_service = UserService(users_file=USERS_FILE)
 storage_service = StorageService(downloads_dir=DESCARGAS_DIR)
@@ -75,7 +76,7 @@ def obtener_ip_local() -> str:
         return "127.0.0.1"
 
 
-# --- ENDPOINTS DE REGISTRO Y DISPOSITIVOS ---
+# --- ENDPOINTS DE REGISTRO Y DISPOSITIVOS (APP ANDROID) ---
 
 @app.post("/api/register")
 async def registrar_usuario(data: RegisterRequest):
@@ -98,10 +99,78 @@ async def verificar_estado_usuario(deviceId: str):
     return user_service.verificar_estado(device_id=deviceId)
 
 
-# --- PANEL ADMINISTRADOR WEB EN /admin ---
+# --- AUTENTICACIÓN SEGURA Y PANEL DE ADMINISTRACIÓN ---
+
+@app.get("/admin/login", response_class=HTMLResponse)
+async def login_page(error: bool = False):
+    error_msg = '<div style="color:#ef4444; margin-bottom:1rem; font-size:0.9rem;">❌ Contraseña incorrecta. Inténtalo de nuevo.</div>' if error else ''
+    
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HaroldSound - Iniciar Sesión Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {{ background:#121212; color:#fff; font-family:'Outfit', sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }}
+        .card {{ background:#181818; border:1px solid #282828; padding:2.5rem; border-radius:16px; width:100%; max-width:380px; text-align:center; box-shadow:0 10px 25px rgba(0,0,0,0.5); }}
+        h2 {{ color:#1DB954; margin-top:0; font-size:1.6rem; }}
+        p {{ color:#b3b3b3; font-size:0.9rem; margin-bottom:1.5rem; }}
+        input {{ width:100%; padding:12px 14px; border-radius:8px; border:1px solid #333; background:#242424; color:#fff; box-sizing:border-box; font-size:1rem; margin-bottom:1rem; }}
+        input:focus {{ outline:none; border-color:#1DB954; }}
+        .btn {{ width:100%; padding:12px; border:none; border-radius:99px; background:#1DB954; color:#fff; font-weight:bold; font-size:1rem; cursor:pointer; transition:background 0.2s; }}
+        .btn:hover {{ background:#1ed760; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🔐 HaroldSound Admin</h2>
+        <p>Ingresa tu clave de administrador para gestionar accesos:</p>
+        {error_msg}
+        <form method="post" action="/admin/login">
+            <input type="password" name="password" placeholder="Contraseña de administrador" required autofocus>
+            <button type="submit" class="btn">Ingresar al Panel</button>
+        </form>
+    </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+@app.post("/admin/login")
+async def process_login(password: str = Form(...)):
+    if auth_service.verificar_password(password):
+        token = auth_service.crear_token_acceso()
+        response = RedirectResponse(url="/admin", status_code=303)
+        # Establecer Cookie segura HttpOnly (no accesible desde JavaScript)
+        response.set_cookie(
+            key="session_token",
+            value=token,
+            httponly=True,
+            samesite="lax",
+            max_age=86400  # 24 horas
+        )
+        logger.info("Sesión de administrador iniciada correctamente vía POST JWT Cookie.")
+        return response
+
+    logger.warning("Intento fallido de inicio de sesión en /admin/login.")
+    return RedirectResponse(url="/admin/login?error=true", status_code=303)
+
+
+@app.get("/admin/logout")
+async def logout():
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    response.delete_cookie("session_token")
+    return response
+
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_panel(passkey: str = ""):
+async def admin_panel(request: Request):
+    session_token = request.cookies.get("session_token")
+    if not auth_service.verificar_token(session_token):
+        return RedirectResponse(url="/admin/login", status_code=303)
+
     users = user_service.cargar_usuarios()
     
     users_html = ""
@@ -125,19 +194,16 @@ async def admin_panel(passkey: str = ""):
             <td><span class="badge {badge_class}">{badge_text}</span></td>
             <td>
                 <form action="/admin/action" method="post" style="display:inline-block;">
-                    <input type="hidden" name="passkey" value="{passkey}">
                     <input type="hidden" name="deviceId" value="{dev_id}">
                     <input type="hidden" name="action" value="approve">
                     <button type="submit" class="btn btn-approve">✅ APROBAR</button>
                 </form>
                 <form action="/admin/action" method="post" style="display:inline-block;">
-                    <input type="hidden" name="passkey" value="{passkey}">
                     <input type="hidden" name="deviceId" value="{dev_id}">
                     <input type="hidden" name="action" value="block">
                     <button type="submit" class="btn btn-block">🚫 BLOQUEAR</button>
                 </form>
                 <form action="/admin/action" method="post" style="display:inline-block;">
-                    <input type="hidden" name="passkey" value="{passkey}">
                     <input type="hidden" name="deviceId" value="{dev_id}">
                     <input type="hidden" name="action" value="delete">
                     <button type="submit" class="btn btn-delete">🗑️ ELIMINAR</button>
@@ -149,27 +215,12 @@ async def admin_panel(passkey: str = ""):
     if not users_html:
         users_html = "<tr><td colspan='5' style='text-align:center; color:#94a3b8;'>No hay solicitudes de registro aún.</td></tr>"
 
-    auth_display = ""
-    if passkey != ADMIN_PASSWORD:
-        auth_display = """
-        <div class="login-overlay">
-            <div class="login-card">
-                <h2>🔐 Panel Administrador HaroldSound</h2>
-                <p>Ingresa tu clave de administrador para acceder:</p>
-                <form method="get" action="/admin">
-                    <input type="password" name="passkey" placeholder="Contraseña de admin" required class="input-pass">
-                    <button type="submit" class="btn btn-approve" style="width:100%; margin-top:1rem;">Ingresar al Panel</button>
-                </form>
-            </div>
-        </div>
-        """
-
     html = f"""<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HaroldSound - Admin Panel</title>
+    <title>HaroldSound - Panel Administrador</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body {{ background:#121212; color:#f8fafc; font-family:'Outfit', sans-serif; margin:0; padding:2rem; }}
@@ -183,20 +234,20 @@ async def admin_panel(passkey: str = ""):
         .badge-pending {{ background:#F59E0B; color:#000; }}
         .badge-approved {{ background:#1DB954; color:#fff; }}
         .badge-blocked {{ background:#E11D48; color:#fff; }}
-        .btn {{ padding:6px 12px; border:none; border-radius:6px; font-weight:bold; cursor:pointer; margin-right:4px; font-size:0.8rem; }}
+        .btn {{ padding:6px 12px; border:none; border-radius:6px; font-weight:bold; cursor:pointer; margin-right:4px; font-size:0.8rem; text-decoration:none; display:inline-block; }}
         .btn-approve {{ background:#1DB954; color:#fff; }}
         .btn-block {{ background:#E11D48; color:#fff; }}
         .btn-delete {{ background:#4B5563; color:#fff; }}
-        .login-overlay {{ position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(18,18,18,0.95); display:flex; align-items:center; justify-content:center; z-index:999; }}
-        .login-card {{ background:#181818; border:1px solid #282828; padding:2rem; border-radius:14dp; width:100%; max-width:380px; text-align:center; }}
-        .input-pass {{ width:100%; padding:10px 14px; border-radius:8px; border:1px solid #333; background:#242424; color:#fff; box-sizing:border-box; font-size:1rem; }}
+        .btn-logout {{ background:#333; color:#ef4444; border:1px solid #444; font-size:0.85rem; padding:8px 16px; border-radius:99px; }}
+        .btn-logout:hover {{ background:#444; }}
     </style>
 </head>
 <body>
-    {auth_display}
     <div class="header">
         <h1>👑 HaroldSound Admin Panel</h1>
-        <div>Acceso Autorizado</div>
+        <div>
+            <a href="/admin/logout" class="btn btn-logout">🚪 Cerrar Sesión</a>
+        </div>
     </div>
     <div class="card">
         <h2>Solicitudes de Dispositivos y Usuarios</h2>
@@ -222,15 +273,16 @@ async def admin_panel(passkey: str = ""):
 
 
 @app.post("/admin/action")
-async def admin_action(passkey: str = Form(...), deviceId: str = Form(...), action: str = Form(...)):
-    if passkey != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Contraseña de administrador incorrecta")
+async def admin_action(request: Request, deviceId: str = Form(...), action: str = Form(...)):
+    session_token = request.cookies.get("session_token")
+    if not auth_service.verificar_token(session_token):
+        raise HTTPException(status_code=401, detail="No autorizado. Inicia sesión en /admin/login")
 
     user_service.actualizar_estado(device_id=deviceId, accion=action)
-    return RedirectResponse(url=f"/admin?passkey={passkey}", status_code=303)
+    return RedirectResponse(url="/admin", status_code=303)
 
 
-# --- ENDPOINTS DE MÚSICA & DESCARGAS ---
+# --- ENDPOINTS DE MÚSICA & DESCARGAS (APP ANDROID) ---
 
 @app.get("/descargar")
 async def descargar_cancion(url: str, request: Request):
