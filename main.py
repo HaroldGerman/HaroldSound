@@ -29,7 +29,7 @@ logger = logging.getLogger("main")
 app = FastAPI(
     title="HaroldSound API & Admin Panel",
     description="Backend optimizado y seguro para HaroldSound con autenticación JWT HttpOnly.",
-    version="2.1.1"
+    version="2.1.0"
 )
 
 app.add_middleware(
@@ -74,21 +74,6 @@ def obtener_ip_local() -> str:
         return ip
     except Exception:
         return "127.0.0.1"
-
-
-def obtener_base_url_publica(request: Request) -> str:
-    """
-    Construye la URL base pública garantizando el uso del protocolo HTTPS seguro
-    para permitir el streaming en Android ExoPlayer sin bloqueos de Cleartext Traffic.
-    """
-    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-    host = request.headers.get("x-forwarded-host", request.url.netloc)
-
-    # Forzar siempre HTTPS en plataformas en la nube (Railway, Render, Fly.io, VPS con SSL)
-    if "railway.app" in host or "onrender.com" in host or "fly.dev" in host or proto == "https":
-        proto = "https"
-
-    return f"{proto}://{host}"
 
 
 # --- ENDPOINTS DE REGISTRO Y DISPOSITIVOS (APP ANDROID) ---
@@ -315,7 +300,7 @@ async def descargar_cancion(url: str, request: Request):
             video_id=resultado.get("id", "")
         )
 
-        base_url = obtener_base_url_publica(request)
+        base_url = str(request.base_url).rstrip('/')
         url_encoded = quote(solo_nombre)
         url_publica = f"{base_url}/descargas/{url_encoded}"
 
@@ -344,7 +329,7 @@ async def buscar_cancion(termino: str):
 
 @app.get("/canciones")
 async def listar_canciones(request: Request):
-    base_url = obtener_base_url_publica(request)
+    base_url = str(request.base_url).rstrip('/')
     canciones = storage_service.listar_canciones(base_url=base_url)
     return {"canciones": canciones}
 
