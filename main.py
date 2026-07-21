@@ -24,7 +24,7 @@ logger = logging.getLogger("main")
 app = FastAPI(
     title="HaroldSound API & Admin Panel",
     description="Backend optimizado y robusto para HaroldSound con integración resiliente a YouTube.",
-    version="2.0.0"
+    version="2.0.1"
 )
 
 app.add_middleware(
@@ -35,12 +35,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Variables de entorno y configuración general
+# Variables de entorno y configuración general de seguridad
 DESCARGAS_DIR = os.getenv("DESCARGAS_DIR", "descargas")
 USERS_FILE = os.getenv("USERS_FILE", "users.json")
 COOKIES_FILE = os.getenv("COOKIES_FILE", "cookies.txt")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "harold_admin_2026")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 PORT = int(os.getenv("PORT", 8000))
+
+if not ADMIN_PASSWORD:
+    ADMIN_PASSWORD = "harold_admin_2026"
+    logger.warning("⚠️ ADVERTENCIA DE SEGURIDAD: Usando clave por defecto 'harold_admin_2026'. Se recomienda configurar la variable de entorno ADMIN_PASSWORD en producción.")
 
 # Inicialización de servicios desacoplados
 youtube_service = YoutubeService(cookies_file=COOKIES_FILE, downloads_dir=DESCARGAS_DIR)
