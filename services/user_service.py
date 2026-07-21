@@ -1,5 +1,6 @@
 import os
 import json
+import random
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -9,8 +10,8 @@ logger = logging.getLogger("user_service")
 
 class UserService:
     """
-    Servicio de gestión de usuarios y dispositivos registrados para HaroldSound.
-    Almacena los datos en un archivo JSON persistente.
+    Servicio de gestión de usuarios, verificación por código PIN de 4 dígitos
+    y dispositivos registrados para HaroldSound.
     """
 
     def __init__(self, users_file: str = "users.json"):
@@ -41,38 +42,82 @@ class UserService:
             logger.error(f"Error al guardar usuarios en '{self.users_file}': {e}")
             return False
 
-    def registrar_usuario(self, device_id: str, nombre: str, telefono: str) -> Dict[str, Any]:
+    def enviar_codigo_verificacion(self, device_id: str, nombre: str, telefono: str) -> Dict[str, Any]:
         """
-        Registra una nueva solicitud de dispositivo o retorna el estado actual si ya existe.
+        Genera un código PIN de 4 dígitos para verificar el dispositivo y teléfono.
         """
         dev_id = device_id.strip()
         users = self.cargar_usuarios()
 
         if dev_id in users:
-            return {
-                "status": "success",
-                "user_status": users[dev_id].get("status", "pending"),
-                "message": "Dispositivo ya registrado"
-            }
+            user = users[dev_id]
+            status = user.get("status", "unregistered")
+
+            if status in ["approved", "blocked"]:
+                return {
+                    "status": "success",
+                    "user_status": status,
+                    "message": f"Dispositivo ya registrado en estado '{status}'."
+                }
+
+        # Generar PIN aleatorio de 4 dígitos
+        pin_code = f"{random.randint(1000, 9999)}"
 
         users[dev_id] = {
             "deviceId": dev_id,
             "nombre": nombre.strip(),
             "telefono": telefono.strip(),
-            "status": "pending",
+            "status": "code_sent",  # Esperando confirmación del PIN en la app
+            "verification_code": pin_code,
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         self.guardar_usuarios(users)
 
+        logger.info(f"🔑 Código PIN {pin_code} generado para {nombre} ({telefono}) [ID: {dev_id}]")
+
         return {
             "status": "success",
-            "user_status": "pending",
-            "message": "Registro recibido. Esperando aprobación del administrador."
+            "user_status": "code_sent",
+            "code": pin_code,
+            "message": f"Código de verificación {pin_code} generado correctamente."
         }
+
+    def verificar_codigo(self, device_id: str, code: str) -> Dict[str, Any]:
+        """
+        Valida el código PIN de 4 dígitos ingresado en la app.
+        Si coincide, pasa al estado 'pending' para aprobación final en el panel /admin.
+        """
+        dev_id = device_id.strip()
+        clean_code = code.strip()
+        users = self.cargar_usuarios()
+
+        if dev_id not in users:
+            return {"status": "error", "message": "Dispositivo no registrado. Por favor inicia el registro."}
+
+        user = users[dev_id]
+        stored_code = user.get("verification_code")
+
+        if stored_code and stored_code == clean_code:
+            user["status"] = "pending"
+            user["verified_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.guardar_usuarios(users)
+
+            logger.info(f"✅ Código PIN verificado para {user.get('nombre')}. Solicitud lista para el panel admin.")
+
+            return {
+                "status": "success",
+                "user_status": "pending",
+                "message": "Código verificado correctamente. Tu solicitud ya aparece en el panel de administrador."
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Código de verificación incorrecto. Revisa el PIN e inténtalo nuevamente."
+            }
 
     def verificar_estado(self, device_id: str) -> Dict[str, Any]:
         """
-        Consulta el estado de registro de un dispositivo por su deviceId.
+        Consulta el estado actual de registro de un dispositivo.
         """
         dev_id = device_id.strip()
         users = self.cargar_usuarios()
@@ -83,14 +128,14 @@ class UserService:
         user_info = users[dev_id]
         return {
             "registered": True,
-            "status": user_info.get("status", "pending"),
+            "status": user_info.get("status", "unregistered"),
             "nombre": user_info.get("nombre", ""),
             "telefono": user_info.get("telefono", "")
         }
 
     def actualizar_estado(self, device_id: str, accion: str) -> bool:
         """
-        Actualiza el estado de aprobación ('approve', 'block', 'delete') para un dispositivo.
+        Actualiza el estado de aprobación ('approve', 'block', 'delete') desde el panel /admin.
         """
         dev_id = device_id.strip()
         users = self.cargar_usuarios()

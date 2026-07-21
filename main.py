@@ -28,8 +28,8 @@ logger = logging.getLogger("main")
 # Inicialización de la aplicación FastAPI
 app = FastAPI(
     title="HaroldSound API & Admin Panel",
-    description="Backend optimizado y seguro para HaroldSound con autenticación JWT HttpOnly.",
-    version="2.1.0"
+    description="Backend optimizado y seguro para HaroldSound con autenticación PIN y JWT.",
+    version="2.2.0"
 )
 
 app.add_middleware(
@@ -62,6 +62,11 @@ class RegisterRequest(BaseModel):
     telefono: str
 
 
+class VerifyCodeRequest(BaseModel):
+    deviceId: str
+    code: str
+
+
 def obtener_ip_local() -> str:
     """
     Obtiene la dirección IP local para facilitar pruebas en red local.
@@ -76,19 +81,43 @@ def obtener_ip_local() -> str:
         return "127.0.0.1"
 
 
-# --- ENDPOINTS DE REGISTRO Y DISPOSITIVOS (APP ANDROID) ---
+def obtener_base_url_publica(request: Request) -> str:
+    """
+    Construye la URL base pública garantizando el uso de HTTPS seguro para streaming.
+    """
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.url.netloc)
+
+    if "railway.app" in host or "onrender.com" in host or "fly.dev" in host or proto == "https":
+        proto = "https"
+
+    return f"{proto}://{host}"
+
+
+# --- ENDPOINTS DE REGISTRO Y VERIFICACIÓN PIN (APP ANDROID) ---
 
 @app.post("/api/register")
-async def registrar_usuario(data: RegisterRequest):
+@app.post("/api/send-code")
+async def registrar_usuario_y_enviar_codigo(data: RegisterRequest):
     if not data.deviceId or not data.nombre or not data.telefono:
         raise HTTPException(status_code=400, detail="Faltan datos requeridos para el registro")
 
-    res = user_service.registrar_usuario(
+    return user_service.enviar_codigo_verificacion(
         device_id=data.deviceId,
         nombre=data.nombre,
         telefono=data.telefono
     )
-    return res
+
+
+@app.post("/api/verify-code")
+async def verificar_codigo_pin(data: VerifyCodeRequest):
+    if not data.deviceId or not data.code:
+        raise HTTPException(status_code=400, detail="Faltan datos requeridos para la verificación")
+
+    return user_service.verificar_codigo(
+        device_id=data.deviceId,
+        code=data.code
+    )
 
 
 @app.get("/api/check-status")
@@ -143,15 +172,14 @@ async def process_login(password: str = Form(...)):
     if auth_service.verificar_password(password):
         token = auth_service.crear_token_acceso()
         response = RedirectResponse(url="/admin", status_code=303)
-        # Establecer Cookie segura HttpOnly (no accesible desde JavaScript)
         response.set_cookie(
             key="session_token",
             value=token,
             httponly=True,
             samesite="lax",
-            max_age=86400  # 24 horas
+            max_age=86400
         )
-        logger.info("Sesión de administrador iniciada correctamente vía POST JWT Cookie.")
+        logger.info("Sesión de administrador iniciada correctamente.")
         return response
 
     logger.warning("Intento fallido de inicio de sesión en /admin/login.")
@@ -175,11 +203,18 @@ async def admin_panel(request: Request):
     
     users_html = ""
     for dev_id, user in users.items():
-        status = user.get("status", "pending")
+        status = user.get("status", "unregistered")
         badge_class = "badge-pending"
         badge_text = "⏳ PENDIENTE"
+        pin_info = f"<br><small style='color:#38bdf8;'>PIN: <strong>{user.get('verification_code', '-')}</strong></small>"
         
-        if status == "approved":
+        if status == "code_sent":
+            badge_class = "badge-code"
+            badge_text = "🔑 PIN ENVIADO"
+        elif status == "pending":
+            badge_class = "badge-pending"
+            badge_text = "⏳ VERIFICADO (PENDIENTE ADMIN)"
+        elif status == "approved":
             badge_class = "badge-approved"
             badge_text = "✅ APROBADO"
         elif status == "blocked":
@@ -188,7 +223,7 @@ async def admin_panel(request: Request):
 
         users_html += f"""
         <tr>
-            <td><strong>{user.get('nombre', 'Desconocido')}</strong></td>
+            <td><strong>{user.get('nombre', 'Desconocido')}</strong>{pin_info}</td>
             <td>{user.get('telefono', '-')}</td>
             <td><small>{user.get('created_at', '-')}</small></td>
             <td><span class="badge {badge_class}">{badge_text}</span></td>
@@ -231,6 +266,7 @@ async def admin_panel(request: Request):
         th, td {{ padding:12px 16px; text-align:left; border-bottom:1px solid #282828; }}
         th {{ color:#1DB954; font-size:0.9rem; text-transform:uppercase; }}
         .badge {{ padding:4px 10px; border-radius:12px; font-size:0.8rem; font-weight:bold; }}
+        .badge-code {{ background:#0284c7; color:#fff; }}
         .badge-pending {{ background:#F59E0B; color:#000; }}
         .badge-approved {{ background:#1DB954; color:#fff; }}
         .badge-blocked {{ background:#E11D48; color:#fff; }}
@@ -290,7 +326,6 @@ async def descargar_cancion(url: str, request: Request):
         resultado = youtube_service.download_audio(url)
         solo_nombre = resultado["archivo"]
         
-        # Guardar metadatos en almacenamiento local
         storage_service.guardar_cancion_metadata(
             archivo=solo_nombre,
             titulo=resultado["titulo"],
@@ -300,7 +335,7 @@ async def descargar_cancion(url: str, request: Request):
             video_id=resultado.get("id", "")
         )
 
-        base_url = str(request.base_url).rstrip('/')
+        base_url = obtener_base_url_publica(request)
         url_encoded = quote(solo_nombre)
         url_publica = f"{base_url}/descargas/{url_encoded}"
 
@@ -329,7 +364,7 @@ async def buscar_cancion(termino: str):
 
 @app.get("/canciones")
 async def listar_canciones(request: Request):
-    base_url = str(request.base_url).rstrip('/')
+    base_url = obtener_base_url_publica(request)
     canciones = storage_service.listar_canciones(base_url=base_url)
     return {"canciones": canciones}
 
