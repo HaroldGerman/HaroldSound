@@ -182,7 +182,9 @@ function renderSongs(songs) {
                 <div class="song-title">${song.titulo}</div>
                 <div class="song-artist">${song.canal}</div>
             </div>
-            <button class="song-action ${isFav(song) ? 'fav-active' : ''}">⭐</button>
+            <button class="song-action ${isFav(song) ? 'fav-active' : ''}">
+                ${isFav(song) ? '✓' : '+'}
+            </button>
         `;
         div.addEventListener('click', (e) => {
             if(e.target.tagName === 'BUTTON') toggleFav(song, e.target);
@@ -333,9 +335,11 @@ function toggleFav(song, btnElement) {
     if(isFav(song)) {
         favs = favs.filter(s => s.titulo !== song.titulo);
         btnElement.classList.remove('fav-active');
+        btnElement.innerHTML = '+';
     } else {
         favs.unshift(song);
         btnElement.classList.add('fav-active');
+        btnElement.innerHTML = '✓';
     }
     localStorage.setItem('favs', JSON.stringify(favs));
     

@@ -1,11 +1,11 @@
 :root {
-    --bg-color: #121212;
-    --card-bg: #181818;
-    --primary: #1DB954;
-    --primary-hover: #1ed760;
-    --text-main: #FFFFFF;
-    --text-sec: #B3B3B3;
-    --border: #282828;
+    --bg-color: #F2F2F7;
+    --card-bg: #FFFFFF;
+    --primary: #31124a;
+    --primary-hover: #4e1d75;
+    --text-main: #000000;
+    --text-sec: #666666;
+    --border: #D1D1D6;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,8 +35,8 @@ body {
 .logo-icon { font-size: 4rem; color: var(--primary); }
 
 input {
-    width: 100%; padding: 14px; border-radius: 8px; border: 1px solid #333;
-    background: #242424; color: #fff; font-size: 1rem; margin-bottom: 15px; font-family: 'Outfit', sans-serif;
+    width: 100%; padding: 14px; border-radius: 24px; border: 1px solid var(--border);
+    background: #FFFFFF; color: var(--text-main); font-size: 1rem; margin-bottom: 15px; font-family: 'Outfit', sans-serif;
 }
 input:focus { outline: none; border-color: var(--primary); }
 .btn-primary {
@@ -81,11 +81,16 @@ input:focus { outline: none; border-color: var(--primary); }
     display: flex; align-items: center; padding: 10px; background: var(--card-bg);
     border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border); cursor: pointer;
 }
-.song-img { width: 50px; height: 50px; border-radius: 6px; object-fit: cover; margin-right: 15px; }
+.song-item:hover { background-color: #E5E5EA; }
+.song-img { width: 50px; height: 50px; border-radius: 6px; object-fit: cover; }
 .song-info { flex: 1; overflow: hidden; }
-.song-title { font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
-.song-artist { font-size: 0.8rem; color: var(--text-sec); }
-.song-action { font-size: 1.2rem; padding: 10px; background: none; border: none; color: var(--text-sec); cursor: pointer; }
+.song-title { font-weight: bold; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.95rem;}
+.song-artist { color: var(--text-sec); font-size: 0.85rem; margin-top: 3px; }
+
+.song-action {
+    background: transparent; border: none; color: var(--text-sec); 
+    font-size: 1.5rem; cursor: pointer; padding: 5px;
+}
 .song-action.fav-active { color: var(--primary); }
 
 /* REPRODUCTOR */
