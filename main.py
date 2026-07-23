@@ -7,7 +7,7 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Form, Response, Cookie
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -53,8 +53,9 @@ youtube_service = YoutubeService(cookies_file=COOKIES_FILE, downloads_dir=DESCAR
 user_service = UserService(users_file=USERS_FILE)
 storage_service = StorageService(downloads_dir=DESCARGAS_DIR)
 
-# Montar directorio estático para descargas
+# Montar directorio estático para descargas y para la Web App (Frontend)
 app.mount("/descargas", StaticFiles(directory=DESCARGAS_DIR), name="descargas")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 class RegisterRequest(BaseModel):
@@ -408,35 +409,7 @@ async def eliminar_cancion(archivo: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def reproductor_web():
-    html_content = """<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HaroldSound - Verificación por WhatsApp</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { background:#121212; color:#fff; font-family:'Outfit', sans-serif; padding:2rem; max-width:650px; margin:0 auto; }
-        h1 { color:#1DB954; font-size:2rem; text-align:center; }
-        .card { background:#181818; border:1px solid #282828; border-radius:14px; padding:1.5rem; margin-bottom:1.5rem; }
-        h3 { color:#38bdf8; margin-top:0; }
-        label { display:block; font-size:0.85rem; color:#b3b3b3; margin-bottom:4px; }
-        input { width:100%; padding:10px 12px; border-radius:8px; border:1px solid #333; background:#242424; color:#fff; box-sizing:border-box; margin-bottom:1rem; font-size:0.95rem; }
-        .btn { width:100%; padding:12px; border:none; border-radius:99px; background:#1DB954; color:#fff; font-weight:bold; cursor:pointer; font-size:1rem; }
-        .btn-sec { background:#0284c7; margin-top:0.5rem; }
-        .res-box { background:#000; border:1px solid #333; padding:12px; border-radius:8px; font-family:monospace; color:#34d399; font-size:0.85rem; white-space:pre-wrap; margin-top:1rem; display:none; }
-    </style>
-</head>
-<body>
-    <h1>🎵 HaroldSound Server Active</h1>
-    <p style="text-align:center; color:#b3b3b3;">Servidor con sistema de seguridad de verificación de número por WhatsApp activo.</p>
-    <div style="text-align:center;">
-        <a href="/admin" class="btn" style="display:inline-block; text-decoration:none; max-width:300px;">👑 Ir al Panel /admin</a>
-    </div>
-</body>
-</html>
-"""
-    return HTMLResponse(content=html_content)
+    return FileResponse("static/index.html")
 
 
 if __name__ == "__main__":

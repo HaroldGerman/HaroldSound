@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <!-- Meta etiquetas para PWA (App Nativa en iPhone) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="HaroldSound">
+    
+    <title>HaroldSound</title>
+    
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Fuente Premium -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <!-- OVERLAY DE REGISTRO / AUTENTICACIÓN -->
+    <div id="authOverlay" class="overlay">
+        <!-- Pantalla de Bienvenida -->
+        <div id="welcomeScreen" class="auth-card">
+            <div class="logo-container">
+                <span class="logo-icon">🎵</span>
+            </div>
+            <h2>Bienvenido a <br><span class="brand-text">HaroldSound</span></h2>
+            <p class="subtitle" style="color: #4e3666;">Tu música, sin límites.</p>
+        </div>
+
+        <!-- Formulario 1: Solicitar Registro -->
+        <div id="registerForm" class="auth-card" style="display:none;">
+            <h3>Registro Requerido</h3>
+            <p>Ingresa tus datos para solicitar acceso al servidor privado.</p>
+            <input type="text" id="regName" placeholder="Tu Nombre" required>
+            <input type="tel" id="regPhone" placeholder="Tu Teléfono (WhatsApp)" required>
+            <button id="btnSendCode" class="btn-primary">Solicitar Acceso</button>
+            <p id="regError" class="error-msg"></p>
+        </div>
+
+        <!-- Formulario 2: Ingresar PIN -->
+        <div id="codeForm" class="auth-card" style="display:none;">
+            <h3>Verifica tu número</h3>
+            <p>Ingresa el código PIN de 4 dígitos que el administrador te envió por WhatsApp.</p>
+            <input type="number" id="regPin" placeholder="XXXX" maxlength="4" required>
+            <button id="btnVerifyCode" class="btn-primary">Verificar PIN</button>
+            <p id="pinError" class="error-msg"></p>
+        </div>
+
+        <!-- Pantalla de Espera (Pending) -->
+        <div id="pendingForm" class="auth-card" style="display:none;">
+            <h3>⏳ En Espera de Aprobación</h3>
+            <p>Tu código ha sido verificado. Espera a que Harold apruebe tu acceso desde el panel de administración.</p>
+            <button id="btnCheckStatus" class="btn-secondary">Comprobar Estado</button>
+        </div>
+
+        <!-- Pantalla Bloqueado -->
+        <div id="blockedForm" class="auth-card" style="display:none;">
+            <h3>🚫 Acceso Denegado</h3>
+            <p>El administrador ha bloqueado tu acceso al servidor.</p>
+        </div>
+    </div>
+
+
+    <!-- APLICACIÓN PRINCIPAL -->
+    <div id="mainApp" class="app-container" style="display:none;">
+        
+        <!-- Buscador superior -->
+        <header class="header">
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="Buscar canción o artista...">
+                <button id="btnSearch">🔍</button>
+            </div>
+        </header>
+
+        <!-- Pestañas -->
+        <div class="tabs">
+            <button class="tab-btn active" id="tabNube">☁️ La Nube</button>
+            <button class="tab-btn" id="tabFavs">⭐ Favoritas</button>
+        </div>
+
+        <!-- Título de sección -->
+        <div class="section-title">
+            <h4 id="lblSectionTitle">🔍 ¿Qué quieres escuchar?</h4>
+            <div id="loadingIndicator" class="loader" style="display:none;"></div>
+        </div>
+
+        <!-- Lista de Resultados -->
+        <div id="resultsList" class="results-container">
+            <!-- Las canciones se inyectan aquí con JS -->
+        </div>
+
+        <div style="height: 120px;"></div> <!-- Espacio para el reproductor fijo -->
+
+        <!-- Reproductor de Música Flotante (MiniPlayer) -->
+        <div id="miniPlayer" class="mini-player" style="display:none;">
+            <!-- Reproductor Expandido -->
+            <div id="expandedPlayer" class="expanded-player" style="display:none;">
+                <button id="btnCollapse" class="btn-collapse">🔽</button>
+                <div class="expanded-cover-container">
+                    <img id="expCover" src="" alt="Cover">
+                </div>
+                <h3 id="expTitle" class="exp-title">Titulo</h3>
+                <p id="expArtist" class="exp-artist">Artista</p>
+                
+                <div class="progress-container">
+                    <input type="range" id="progressBar" value="0" max="100">
+                    <div class="time-row">
+                        <span id="currentTime">00:00</span>
+                        <span id="totalTime">00:00</span>
+                    </div>
+                </div>
+
+                <div class="controls-row">
+                    <button id="btnPrevExp" class="btn-ctrl">⏮️</button>
+                    <button id="btnPlayExp" class="btn-play-large">▶</button>
+                    <button id="btnNextExp" class="btn-ctrl">⏭️</button>
+                </div>
+                
+                <div class="extra-controls">
+                    <button id="btnFavExp" class="btn-icon">⭐</button>
+                </div>
+
+                <div class="brand-footer">HaroldSound</div>
+            </div>
+
+            <!-- Reproductor Mini (Barra Inferior) -->
+            <div id="compactPlayer" class="compact-player">
+                <img id="miniCover" src="" alt="Cover">
+                <div class="mini-info">
+                    <span id="miniTitle" class="mini-title">Titulo</span>
+                    <span id="miniArtist" class="mini-artist">Artista</span>
+                </div>
+                <button id="btnFavMini" class="btn-icon-small">⭐</button>
+                <button id="btnPlayMini" class="btn-icon-small">▶</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Elemento Audio Oculto -->
+    <audio id="audioElement"></audio>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
